@@ -165,6 +165,16 @@ class VanillaBC(nn.Module):
             )
             obs_dim += encoder_config.xhand_tactile_net_dim[-1]
 
+        # --- FIX START: Add custom dimensions ---
+        if 'proprio' in self.data_key:
+            # Proprioception dimension is 5
+            obs_dim += 5 
+            
+        if 'tactile' in self.data_key:
+            # Tactile dimension is 12 (6 for index + 6 for thumb)
+            obs_dim += 12
+        # --- FIX END ---
+
         global_cond_dim = obs_dim * self.obs_horizon
         if self.temporal_aggregation_function == "transformer":
             global_cond_dim = 128
@@ -195,74 +205,73 @@ class VanillaBC(nn.Module):
 
     def forward_encoder(self, data):
         features = []
-        for data_key in self.policy_input_types:
+        # 1. FIX: Iterate over actual data keys instead of self.policy_input_types
+        # We exclude 'action' because it is the target, not an input feature.
+        input_keys = [k for k in data.keys() if k != "action"]
+
+        for data_key in input_keys:
+            # Extract data and ensure it's on the correct device
+            # Shape: (Batch, Horizon, Dim)
             nsample = data[data_key][:, :self.obs_horizon].to(self.device)
-            if data_key == "img":
-                images = [
-                    nsample[:, :, i] for i in range(nsample.shape[2])
-                ]  # [B, obs_horizon, M, C, H, W]
+
+            # 2. FIX: Use if/elif structure to ensure only ONE block runs per key
+            
+            if data_key == "proprio":
+                # Assuming you want raw values concatenated. 
+                # Note: If you use self.state_encoder(nsample), it might crash 
+                # if the encoder expects a different input dimension.
+                # Appending 'nsample' directly is safest for raw vector inputs.
+                features.append(nsample)
+
+            elif data_key == "tactile":
+                # Appending raw tactile data (12D) directly.
+                features.append(nsample)
+                
+            elif data_key == "img":
+                # (Existing Image Logic)
+                images = [nsample[:, :, i] for i in range(nsample.shape[2])]
+                
+                # Check which encoder is active
                 if self.im_encoder == 'CLIP':
                     image_features = [
-                        self.encoders[f"{data_key}_encoder"][i].encode_image(
-                            image.flatten(end_dim=1)
-                        )
+                        self.encoders[f"{data_key}_encoder"][i].encode_image(image.flatten(end_dim=1))
                         for i, image in enumerate(images)
                     ]
                     image_features = [
                         self.encoders["img_encoder_proj"][i](im_feat.float())
                         for i, im_feat in enumerate(image_features)
                     ]
-                elif self.im_encoder == 'DINO' or self.im_encoder == 'DINOv3':
+                else: # scratch / standard
                     image_features = [
-                        self.encoders[f"{data_key}_encoder"][i](
-                            image.flatten(end_dim=1)
-                        )
+                        self.encoders[f"{data_key}_encoder"][i](image.flatten(end_dim=1))
                         for i, image in enumerate(images)
                     ]
-                    image_features = [
-                        self.encoders["img_encoder_proj"][i](im_feat.float())
-                        for i, im_feat in enumerate(image_features)
-                    ]
-                else:
-                    image_features = [
-                        self.encoders[f"{data_key}_encoder"][i](
-                            image.flatten(end_dim=1)
-                        )
-                        for i, image in enumerate(images)
-                    ]
+                
                 image_features = torch.stack(image_features, dim=2)
-                image_features = image_features.reshape(
-                    *nsample.shape[:2], -1
-                )
+                image_features = image_features.reshape(*nsample.shape[:2], -1)
                 features.append(image_features)
-            elif data_key == "gr1_loco":
-                nsample = torch.cat([
-                    data["gr1_loco"][:, :self.obs_horizon].to(self.device),
-                    data["last_actions"][:, :self.obs_horizon].to(self.device),
-                    data["joint_vel"][:, :self.obs_horizon].to(self.device),
-                    data["base_angvel"][:, :self.obs_horizon].to(self.device),
-                    data["base_imu"][:, :self.obs_horizon].to(self.device) * 10,
-                    data["wave"][:, :self.obs_horizon].to(self.device),
-                ], dim=2)
-                nfeat = self.encoders[f"{data_key}_encoder"](
-                    nsample.flatten(end_dim=1)
-                )
-                nfeat = nfeat.reshape(*nsample.shape[:2], -1)
-                features.append(nfeat)
+
             else:
-                nfeat = self.encoders[f"{data_key}_encoder"](
-                    nsample.flatten(end_dim=1)
-                )
-                nfeat = nfeat.reshape(*nsample.shape[:2], -1)
-                features.append(nfeat)
-                # (B, obs_horizon, obs_dim)
+                # Fallback for other keys (like gr1_loco if needed)
+                # Only runs if the key is NOT proprio, tactile, or img
+                if f"{data_key}_encoder" in self.encoders:
+                    nfeat = self.encoders[f"{data_key}_encoder"](nsample.flatten(end_dim=1))
+                    nfeat = nfeat.reshape(*nsample.shape[:2], -1)
+                    features.append(nfeat)
+                else:
+                    print(f"Warning: No encoder found for {data_key}, skipping.")
+
+        # 3. Final Check
+        if not features:
+            raise ValueError(f"No features extracted! Input keys were: {data.keys()}")
+
         obs_features = torch.cat(features, dim=-1)
-        # (batch x t x dim)
+
         if self.temporal_aggregation_function == "transformer":
             obs_cond = self.temporal_aggregation_net(obs_features)
         else:
-            # (B, obs_horizon * obs_dim)
             obs_cond = obs_features.flatten(start_dim=1)
+            
         return obs_cond
 
     def bc_model(self, x):

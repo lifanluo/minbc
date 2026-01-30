@@ -35,6 +35,23 @@ Required packages:
 
 If your task doesn't require vision, use only proprioceptive data:
 
+python3 train.py train \
+  --gpu 0 \
+  --seed 0 \
+  --optim.num_epoch 100 \
+  --optim.learning-rate 0.0005 \
+  --optim.batch-size 64 \
+  --data.pred-head-act \
+  --policy-type bc \
+  --dp.action_decoder cond_hourglass \
+  --data.base_action_dim 32 \
+  --data.data-key img gr1_upper hand_qpos \
+  --data.im-key head_image left_wrist_image right_wrist_image \
+  --data.im-encoder scratch \
+  --train_data gr1_dishwasher_debug/train \
+  --test_data gr1_dishwasher_debug/test \
+  --output_name gr1_dishwasher_debug/example_test/
+
 ```bash
 # Single GPU
 python train.py train \
