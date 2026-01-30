@@ -17,7 +17,9 @@ RT_DIM = {
     "eef_speed": 12,
     "ee_pos_quat": 12,
     "xhand_pos": 12,
-    "xhand_tactile": 1800
+    "xhand_tactile": 1800,
+    "gr1_upper": 20,
+    "hand_qpos": 12
 }
 
 
@@ -204,8 +206,12 @@ class Dataset(torch.utils.data.Dataset):
             for rt in self.data_key:
                 train_data["data"][rt][data_index:data_index+data_length] = obs[rt]
 
-            # action space
-            act = np.stack([d["action"] for d in data])
+            # --- START CHANGE ---
+            # Construct action directly from the processed 'obs' variable
+            # We combine gr1_upper (20) and hand_qpos (12) to match action_dim (32)
+            act = np.concatenate([obs["gr1_upper"], obs["hand_qpos"]], axis=-1)
+            # --- END CHANGE ---
+
             if config.data.pred_head_act:
                 head_act = np.stack([d["head_actions"] for d in data])
                 act = np.concatenate([act, head_act], axis=1)
