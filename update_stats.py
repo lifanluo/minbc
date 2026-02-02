@@ -8,8 +8,8 @@ from tqdm import tqdm
 
 # --- CONFIG ---
 DATA_PATH = "/home/lifan/Documents/GitHub/minbc/data/data-20260128"  # Point to your training data folder
-CHECKPOINT_DIR = "/home/lifan/Documents/GitHub/minbc/outputs/test_00001" # Point to your checkpoint folder
-STATS_FILE = "/home/lifan/Documents/GitHub/minbc/outputs/test_00001/stats.pkl"
+CHECKPOINT_DIR = "/home/lifan/Documents/GitHub/minbc/outputs/test_00002" # Point to your checkpoint folder
+STATS_FILE = os.path.join(CHECKPOINT_DIR, "stats.pkl")
 
 def main():
     print(f"Scanning {DATA_PATH} for data...")

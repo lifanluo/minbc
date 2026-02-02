@@ -73,7 +73,5 @@ class ModelRunner:
                 end_idx = max_horizon
                 
             pred_chunk = pred_batch[0, start_idx:end_idx].cpu().numpy()
-
-        print(f"[ModelRunner] Predicted action chunk shape: {pred_chunk}")
             
         return pred_chunk

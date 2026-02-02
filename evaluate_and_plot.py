@@ -4,14 +4,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tyro
 import dataclasses
+import pandas as pd  # Added for CSV handling
 from tqdm import tqdm
 from dataset.dataset import Dataset
 from inference import ModelRunner
 
 @dataclasses.dataclass
 class PlotConfig:
-    checkpoint_dir: str = "/home/lifan/Documents/GitHub/minbc/outputs/test_00001"
-    test_data_path: str = "/home/lifan/Documents/GitHub/minbc/data/data-20260128"
+    checkpoint_dir: str = "/home/lifan/Documents/GitHub/minbc/outputs/test_00002"
+    test_data_path: str = "/home/lifan/Documents/GitHub/minbc/data/test"
     action_dim: int = 5
     gpu: int = 0
     # New parameter for Horizon
@@ -68,6 +69,11 @@ def main(cfg: PlotConfig):
         gt_actions = []
         pred_actions = []
         
+        # Lists to store data for CSV
+        csv_pred_chunks = []
+        csv_gt_chunks = []
+        csv_start_frames = []
+        
         # Use a while loop to jump by 'execution_horizon'
         i = 0
         pbar = tqdm(total=len(indices), leave=False)
@@ -93,7 +99,20 @@ def main(cfg: PlotConfig):
             
             gt_chunk = batch['action'][start_t : end_t].cpu().numpy()
             
-            # D. Append
+            # --- Store Data for CSV (Unnormalized) ---
+            # Unnormalize current chunks immediately for saving
+            curr_pred_unnorm = unnormalize_data(pred_chunk, runner.stats['action'])
+            curr_gt_unnorm = unnormalize_data(gt_chunk, runner.stats['action'])
+            
+            csv_pred_chunks.append(curr_pred_unnorm)
+            csv_gt_chunks.append(curr_gt_unnorm)
+            
+            # Create an array indicating the start frame for this chunk
+            # i is the current frame index relative to the start of the trajectory processing
+            chunk_len = len(pred_chunk)
+            csv_start_frames.append(np.full(chunk_len, i))
+
+            # D. Append for Plotting
             # Since pred_chunk is (T, D), we can extend the list
             if len(pred_actions) == 0:
                 pred_actions = pred_chunk
@@ -109,13 +128,36 @@ def main(cfg: PlotConfig):
             
         pbar.close()
 
-        # --- 4. Post-Process & Plot ---
-        # Un-normalize
+        # --- 4. Save CSV ---
+        # Concatenate all collected chunks
+        all_pred_unnorm = np.concatenate(csv_pred_chunks, axis=0)
+        all_gt_unnorm = np.concatenate(csv_gt_chunks, axis=0)
+        all_start_frames = np.concatenate(csv_start_frames, axis=0)
+        
+        # Construct DataFrame with interleaved columns
+        data_dict = {'start_frame': all_start_frames}
+        
+        for d in range(cfg.action_dim):
+            # Interleave: pred_dim_X then gt_dim_X
+            data_dict[f'pred_dim_{d}'] = all_pred_unnorm[:, d]
+            data_dict[f'gt_dim_{d}'] = all_gt_unnorm[:, d]
+            
+        df = pd.DataFrame(data_dict)
+        csv_save_name = f"traj_{ep_num}_h{cfg.execution_horizon}.csv"
+        csv_save_path = os.path.join(cfg.checkpoint_dir, csv_save_name)
+        df.to_csv(csv_save_path, index=False)
+        print(f"Saved CSV: {csv_save_path}")
+
+        # --- 5. Post-Process & Plot ---
+        # Un-normalize (using the accumulated arrays for plotting)
         gt_real = unnormalize_data(gt_actions, runner.stats['action'])
         pred_real = unnormalize_data(pred_actions, runner.stats['action'])
         
         # Create Plot
         fig, axes = plt.subplots(cfg.action_dim, 1, figsize=(10, 15), sharex=True)
+        # Handle case if action_dim=1 (axes is not iterable)
+        if cfg.action_dim == 1: axes = [axes]
+        
         plt.subplots_adjust(hspace=0.1)
         axes[0].set_title(f"Trajectory {ep_num} (Exec Horizon: {cfg.execution_horizon})", fontsize=14)
         
@@ -135,7 +177,7 @@ def main(cfg: PlotConfig):
         save_path = os.path.join(cfg.checkpoint_dir, save_name)
         plt.savefig(save_path, bbox_inches='tight', dpi=150)
         plt.close(fig)
-        print(f"Saved {save_path}")
+        print(f"Saved Plot: {save_path}")
 
 if __name__ == "__main__":
     tyro.cli(main)
