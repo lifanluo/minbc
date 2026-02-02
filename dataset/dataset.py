@@ -94,7 +94,7 @@ class Dataset(torch.utils.data.Dataset):
     def __init__(
         self,
         config: MinBCConfig,
-        data_path: str,
+        data_path: str, # Note: This comes in as a list of strings
         data_key: Tuple[str, ...],
         stats: dict = None,
         transform=None,
@@ -116,15 +116,30 @@ class Dataset(torch.utils.data.Dataset):
         all_actions = []
         episode_ends = []
         total_length = 0
+        
+        # 1. FIX: Collect CSVs from ALL paths in the list, not just the first one
+        csv_files = []
+        
+        # Ensure data_path is a list (it usually is, but handle single string case)
+        paths_to_search = data_path if isinstance(data_path, list) else [data_path]
 
-        # Handle data_path input (can be list or string)
-        root_path = data_path[0] if isinstance(data_path, list) else data_path
+        print(f"[Dataset] Searching {len(paths_to_search)} paths for log.csv...")
+
+        for p in paths_to_search:
+            # Search recursively in case 'p' is a root folder
+            pattern = os.path.join(p, "**", "log.csv")
+            found = glob(pattern, recursive=True)
+            
+            # If no CSV found recursively, maybe 'p' is the folder containing the csv directly
+            if not found and os.path.exists(os.path.join(p, "log.csv")):
+                found = [os.path.join(p, "log.csv")]
+                
+            csv_files.extend(found)
+
+        # Remove duplicates and sort
+        csv_files = sorted(list(set(csv_files)))
         
-        # Find all log.csv files
-        search_pattern = os.path.join(root_path, "**", "log.csv")
-        csv_files = sorted(glob(search_pattern, recursive=True))
-        
-        print(f"[Dataset] Scanning {root_path}... Found {len(csv_files)} trajectories.")
+        print(f"[Dataset] Total trajectories found: {len(csv_files)}")
 
         for csv_path in csv_files:
             folder_path = os.path.dirname(csv_path)
@@ -149,33 +164,33 @@ class Dataset(torch.utils.data.Dataset):
             length = len(proprio_data)
             
             # 2. Load Tactile (12 dims)
-            # We must load these now to create a synchronized array
             tactile_seq = []
             
-            # Pre-check if files exist to avoid crashing mid-loop
+            # Quick check if first file exists to fail fast
             first_idx_path = os.path.join(idx_flow_dir, "index_nail_000000.npy")
             if not os.path.exists(first_idx_path):
                 print(f"Skipping {csv_path}: Tactile files not found.")
                 continue
 
+            valid_trajectory = True
             for t in range(length):
                 idx_p = os.path.join(idx_flow_dir, f"index_nail_{t:06d}.npy")
                 thb_p = os.path.join(thb_flow_dir, f"thumb_nail_{t:06d}.npy")
                 
                 try:
-                    # Assume shape is (6,) or (1,6) -> flatten to (6,)
+                    # Load and flatten
                     idx_val = np.load(idx_p).flatten()
                     thb_val = np.load(thb_p).flatten()
                     tactile_seq.append(np.concatenate([idx_val, thb_val]))
                 except FileNotFoundError:
-                    # Handle case where tactile data might be shorter than CSV
-                    # Pad with last frame or zeros, or cut trajectory.
-                    # Here we cut the trajectory to current length to be safe.
+                    # If tactile data is missing for a step, cut the trajectory here
+                    print(f"Warning: Missing tactile frame at step {t} in {folder_path}")
                     proprio_data = proprio_data[:t]
                     length = t
+                    if length == 0: valid_trajectory = False
                     break
             
-            if length == 0:
+            if not valid_trajectory or length == 0:
                 continue
 
             tactile_data = np.array(tactile_seq, dtype=np.float32)
@@ -189,12 +204,12 @@ class Dataset(torch.utils.data.Dataset):
             
             total_length += length
             episode_ends.append(total_length)
-            print(f"Loaded trajectory: {length} steps")
+            # print(f"Loaded {os.path.basename(folder_path)}: {length} steps")
 
-        # Combine all lists into single numpy arrays
         if len(all_proprio) == 0:
-            raise ValueError("No valid data found! Check paths and CSV columns.")
+            raise ValueError("No valid data found! Check paths.")
 
+        # Combine all lists
         train_data = {
             "data": {
                 "proprio": np.concatenate(all_proprio, axis=0),
@@ -206,17 +221,13 @@ class Dataset(torch.utils.data.Dataset):
             }
         }
         
-        print("Dataset loaded successfully.")
-        print("Proprio Shape:", train_data["data"]["proprio"].shape)
-        print("Tactile Shape:", train_data["data"]["tactile"].shape)
-        print("Action Shape:", train_data["data"]["action"].shape)
+        print(f"Dataset loaded. Total steps: {total_length}")
+        # print("Proprio Shape:", train_data["data"]["proprio"].shape)
 
         # --- NORMALIZATION LOGIC ---
-        # We handle 'proprio' and 'tactile' using percentile normalization.
-        
         self.percentiles = {} if percentiles is None else percentiles
         
-        # Only iterate over keys that exist in our loaded data
+        # Only iterate over keys that exist
         keys_to_normalize = [k for k in self.data_key if k != "img"]
 
         for data_type in keys_to_normalize:
@@ -228,29 +239,20 @@ class Dataset(torch.utils.data.Dataset):
                 self.percentiles[data_type] = {'lower': p2, 'upper': p98}
             else:
                 if data_type not in self.percentiles:
-                     # Fallback if testing on data without stats (should not happen in proper training)
                      p2 = np.percentile(d, 2, axis=0)
                      p98 = np.percentile(d, 98, axis=0)
                 else:
                     p2 = self.percentiles[data_type]['lower']
                     p98 = self.percentiles[data_type]['upper']
 
-            print(f"Normalizing {data_type}...")
-            # print(f"  P2: {[round(num, 4) for num in p2]}")
-            # print(f"  P98: {[round(num, 4) for num in p98]}")
-
             mid = 0.5 * (p2 + p98)
             span = (p98 - p2)
-            # Avoid divide-by-zero if a dim is constant
             eps = 1e-12
             span_safe = np.where(span < eps, 1.0, span)
-            y = 2.0 * (d - mid) / span_safe  # 2–98% -> [-1, 1]
-            y = np.clip(y, -1.5, 1.5)  # cap to [-1.5, 1.5]
-            
-            # Update the data in place
+            y = 2.0 * (d - mid) / span_safe
+            y = np.clip(y, -1.5, 1.5)
             train_data["data"][data_type] = y
 
-        # Create indices for sampling (sliding window)
         self.indices = create_sample_indices(
             episode_ends=train_data["meta"]["episode_ends"],
             sequence_length=self.pre_horizon,
@@ -258,7 +260,6 @@ class Dataset(torch.utils.data.Dataset):
             pad_after=self.act_horizon - 1,
         )
 
-        # Normalize Action (min-max normalization to [-1, 1])
         if stats is None:
             stats = dict()
             stats["action"] = get_data_stats(train_data["data"]["action"])
@@ -270,7 +271,7 @@ class Dataset(torch.utils.data.Dataset):
         )
 
         self.stats = stats
-        self.train_data = train_data["data"] # Point directly to data dict
+        self.train_data = train_data["data"]
         self.binarize_touch = binarize_touch
 
     def __len__(self):

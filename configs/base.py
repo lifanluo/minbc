@@ -34,7 +34,7 @@ class DPConfig:
     encoder: EncoderConfig = EncoderConfig()
     obs_horizon: int = 1
     act_horizon: int = 8
-    pre_horizon: int = 16
+    pre_horizon: int = 10
     diffusion_iters: int = 100
     diffusion_method: Literal["ddim", "ddpm"] = "ddpm"
     action_decoder: Literal["mlp", "hourglass", "cond_hourglass"] = "mlp"

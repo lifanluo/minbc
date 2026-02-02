@@ -55,7 +55,6 @@ if __name__ == "__main__":
         config, clip_far=False,
         num_diffusion_iters=config.dp.diffusion_iters,
         load_img=load_img, num_workers=8,
-        # binarize_touch=config.dp.encoder.hand_touch_input_binary,
         dit=False, device=device,
     )
     if agent.stats is not None:

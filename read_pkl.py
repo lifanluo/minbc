@@ -3,11 +3,12 @@ import pickle
 import numpy as np
 
 # Replace with the path to your file, e.g., 'outputs/gr1_dishwasher_debug/example_test/stats.pkl'
-file_path = '/home/lifan/Documents/GitHub/minbc/outputs/gr1_dishwasher_debug/example_test/norm.pkl' 
+file_path = '/home/lifan/Documents/GitHub/minbc/outputs/test_00001/stats.pkl' 
 
 with open(file_path, 'rb') as f:
     data = pickle.load(f)
 
+print(data)
 # Print the type of data (usually dict)
 print(f"Data type: {type(data)}")
 
