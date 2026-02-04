@@ -159,15 +159,20 @@ class ConditionalUnet1D(nn.Module):
         self.device = device
         self.data_key = config.data.data_key
         self.image_num = len(config.data.im_key)
-        possible_input_type = ["img", "joint_positions","joint_velocities", "eef_speed", "ee_pos_quat", "xhand_pos", "xhand_tactile"]
+        
+        # 1. ALLOWED KEYS: Include 'proprio' and 'tactile'
+        possible_input_type = ["img", "joint_positions","joint_velocities", "eef_speed", "ee_pos_quat", "xhand_pos", "xhand_tactile", "proprio", "tactile"]
+        
         self.im_encoder = config.data.im_encoder
         self.policy_input_types = [
             rt for rt in possible_input_type if rt in self.data_key
         ]
-        print(self.policy_input_types)
+        print(f"Policy Input Types: {self.policy_input_types}")
+        
         self.encoders = nn.ModuleDict({})
         encoder_config = config.dp.encoder
         obs_dim = 0
+        
         if "img" in self.data_key:
             if config.data.im_encoder == 'scratch':
                 image_encoder = nn.ModuleList(
@@ -212,6 +217,7 @@ class ConditionalUnet1D(nn.Module):
             image_dim = encoder_config.im_net_output_dim * self.image_num
             self.encoders["img_encoder"] = image_encoder
             obs_dim += image_dim
+            
         if 'joint_positions' in self.data_key:
             self.encoders["joint_positions_encoder"] = StateEncoder(
                 encoder_config.joint_positions_input_dim,
@@ -248,6 +254,21 @@ class ConditionalUnet1D(nn.Module):
                 encoder_config.xhand_tactile_net_dim,
             )
             obs_dim += encoder_config.xhand_tactile_net_dim[-1]
+
+        # 2. INITIALIZATION: Add Proprio and Tactile Encoders Here (Inside __init__)
+        if 'proprio' in self.data_key:
+            self.encoders["proprio_encoder"] = StateEncoder(
+                encoder_config.proprio_input_dim,
+                encoder_config.proprio_net_dim,
+            )
+            obs_dim += encoder_config.proprio_net_dim[-1]
+
+        if 'tactile' in self.data_key:
+            self.encoders["tactile_encoder"] = StateEncoder(
+                encoder_config.tactile_input_dim,
+                encoder_config.tactile_net_dim,
+            )
+            obs_dim += encoder_config.tactile_net_dim[-1]
 
         global_cond_dim = obs_dim * self.obs_horizon
         all_dims = [input_dim] + list(down_dims)
@@ -350,6 +371,7 @@ class ConditionalUnet1D(nn.Module):
         features = []
         for data_key in self.policy_input_types:
             nsample = data[data_key][:, :self.obs_horizon].to(self.device)
+            
             if data_key == "img":
                 images = [
                     nsample[:, :, i] for i in range(nsample.shape[2])
@@ -390,12 +412,16 @@ class ConditionalUnet1D(nn.Module):
                 )
                 features.append(image_features)
             else:
+                # 3. GENERIC HANDLING: Lookup existing encoders
                 nfeat = self.encoders[f"{data_key}_encoder"](
                     nsample.flatten(end_dim=1)
                 )
                 nfeat = nfeat.reshape(*nsample.shape[:2], -1)
                 features.append(nfeat)
                 # (B, obs_horizon, obs_dim)
+
+        # NOTE: Removed the stray initialization blocks that caused errors here
+
         obs_features = torch.cat(features, dim=-1)
         # (B, obs_horizon * obs_dim)
         obs_cond = obs_features.flatten(start_dim=1)

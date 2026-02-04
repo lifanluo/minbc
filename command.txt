@@ -6,8 +6,7 @@ python3 train.py train \
   --data.data-key proprio tactile \
   --train_data /home/lifan/Documents/GitHub/minbc/data/train \
   --test_data /home/lifan/Documents/GitHub/minbc/data/test \
-  --output_name /home/lifan/Documents/GitHub/minbc/outputs/test_00003
-
+  --output_name /home/lifan/Documents/GitHub/minbc/outputs/test_00001
 
 tensorboard --logdir outputs/test_00001
 

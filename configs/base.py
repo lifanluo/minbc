@@ -28,13 +28,21 @@ class EncoderConfig:
     im_encoder_frozen: bool = False
     im_encoder_reduce_lr: bool = False
 
+    # --- ADD THESE LINES ---
+    proprio_input_dim: int = 5          # Matches your 5D proprio
+    proprio_net_dim: tuple = (32, 64)   # MLP layers for proprio
+    
+    tactile_input_dim: int = 12         # Matches your 12D tactile
+    tactile_net_dim: tuple = (32, 64)   # MLP layers for tactile
+    # -----------------------
+
 
 @dataclass(frozen=True)
 class DPConfig:
     encoder: EncoderConfig = EncoderConfig()
     obs_horizon: int = 1
     act_horizon: int = 8
-    pre_horizon: int = 10
+    pre_horizon: int = 12
     diffusion_iters: int = 100
     diffusion_method: Literal["ddim", "ddpm"] = "ddpm"
     action_decoder: Literal["mlp", "hourglass", "cond_hourglass"] = "mlp"
@@ -96,7 +104,7 @@ class MinBCConfig:
     train_data: str = 'screw_driver_1104_modified/train/'
     test_data: str = 'screw_driver_1104_modified/test/'
     output_name: str = 'debug'
-    policy_type: Literal["dp", "bc"] = "bc"
+    policy_type: Literal["dp", "bc"] = "dp"
     dp: DPConfig = DPConfig()
     optim: OptimConfig = OptimConfig()
     data: DataConfig = DataConfig()
