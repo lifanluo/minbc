@@ -1,22 +1,36 @@
 #%%
 import os
+# --- FIX: Force Headless Mode for OpenCV/Qt ---
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+
 import numpy as np
+import matplotlib
+# --- FIX: Force Headless Mode for Matplotlib ---
+matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
+
 import tyro
 import dataclasses
-import pandas as pd  # Added for CSV handling
+import pandas as pd
+import torch
 from tqdm import tqdm
 from dataset.dataset import Dataset
 from inference import ModelRunner
 
 @dataclasses.dataclass
 class PlotConfig:
-    checkpoint_dir: str = "/home/lifan/Documents/GitHub/minbc/outputs/test_00002"
-    test_data_path: str = "/home/lifan/Documents/GitHub/minbc/data/test"
-    action_dim: int = 5
+    checkpoint_dir: str = "/home/lifan/Documents/GitHub/minbc/outputs/bc_00001"
+    test_data_path: str = "/home/lifan/Documents/GitHub/minbc/data/train"
+    
+    # 10D Action (6D Arm + 4D Hand)
+    action_dim: int = 10
+    
     gpu: int = 0
-    # New parameter for Horizon
-    execution_horizon: int = 5 
+    execution_horizon: int = 6
+    policy_type: str = "bc"
+    
+    # RGB Optional Flag
+    use_rgb: bool = False
 
 def unnormalize_data(ndata, stats):
     dmin = stats['min']
@@ -25,159 +39,179 @@ def unnormalize_data(ndata, stats):
     dmax = dmax.reshape(1, -1)
     return ((ndata + 1) / 2) * (dmax - dmin + 1e-8) + dmin
 
+def _episode_root_from_path(path: str) -> str:
+    if not path:
+        return ""
+    # Some files live in subfolders (e.g., rgb/rgb_000000.png),
+    # others are directly under the episode dir (e.g., rgb_000000.png).
+    subdir_names = {
+        "rgb",
+        "index_comp",
+        "thumb_comp",
+        "index_raw",
+        "thumb_raw",
+        "index_pad_flow",
+        "index_nail_flow",
+        "thumb_pad_flow",
+        "thumb_nail_flow",
+        "xyz_npy",
+    }
+    parent = os.path.basename(os.path.dirname(path))
+    if parent in subdir_names:
+        return os.path.dirname(os.path.dirname(path))
+    return os.path.dirname(path)
+
+
+def _get_episode_root(dataset, buffer_idx: int) -> str:
+    # prefer rgb paths if available, otherwise fall back to pad/nail paths
+    for key in ["rgb_paths", "pad_idx_paths", "pad_thb_paths", "nail_idx_paths", "nail_thb_paths"]:
+        if hasattr(dataset, "buffer") and key in dataset.buffer and len(dataset.buffer[key]) > buffer_idx:
+            return _episode_root_from_path(dataset.buffer[key][buffer_idx])
+    return ""
+
+
 def get_grouped_episodes(dataset):
+    """Group dataset indices by episode directory.
+
+    This avoids merging episodes when global buffer indices are contiguous.
+    """
     episode_indices = []
     current_episode = []
+    current_root = ""
+
     for i in range(len(dataset)):
-        curr_buffer_start = dataset.indices[i][0]
-        if len(current_episode) == 0:
+        buffer_start = dataset.indices[i][0]
+        root = _get_episode_root(dataset, buffer_start)
+        if not current_episode:
+            current_episode = [i]
+            current_root = root
+            continue
+        if root == current_root:
             current_episode.append(i)
         else:
-            prev_idx = current_episode[-1]
-            prev_buffer_start = dataset.indices[prev_idx][0]
-            if curr_buffer_start == prev_buffer_start + 1:
-                current_episode.append(i)
-            else:
-                episode_indices.append(current_episode)
-                current_episode = [i]
-    if len(current_episode) > 0:
+            episode_indices.append(current_episode)
+            current_episode = [i]
+            current_root = root
+
+    if current_episode:
         episode_indices.append(current_episode)
     return episode_indices
 
 def main(cfg: PlotConfig):
-    # --- 1. Initialize Inference Engine ---
-    runner = ModelRunner(cfg.checkpoint_dir, cfg.action_dim, cfg.gpu)
+    # 1. Load Model
+    runner = ModelRunner(
+        cfg.checkpoint_dir, 
+        cfg.action_dim, 
+        cfg.gpu, 
+        policy_type=cfg.policy_type,
+        use_rgb=cfg.use_rgb
+    )
     
-    # --- 2. Load Data ---
-    print(f"Loading dataset from {cfg.test_data_path}...")
-    dataset = Dataset(
-        runner.config,
+    # 2. Load Dataset
+    test_dataset = Dataset(
+        config=runner.config, 
         data_path=cfg.test_data_path, 
-        data_key=('proprio', 'tactile'),
         split='test'
     )
     
-    episode_indices = get_grouped_episodes(dataset)
-    print(f"Found {len(episode_indices)} trajectories.")
-
-    # --- 3. Run Inference with Strided Loop ---
-    dim_labels = ['Idx PLP', 'Idx Bend', 'Thb PLP', 'Thb Bend', 'Z (mm)']
-
-    for ep_num, indices in enumerate(episode_indices):
-        print(f"Processing Trajectory {ep_num} (Horizon: {cfg.execution_horizon})...")
-        
+    print(f"Loaded {len(test_dataset)} samples.")
+    grouped_episodes = get_grouped_episodes(test_dataset)
+    print(f"Found {len(grouped_episodes)} episodes.")
+    
+    # Create output dir
+    save_dir = os.path.join(cfg.checkpoint_dir, "plots")
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # 3. Evaluate
+    for ep_num, episode_idxs in enumerate(tqdm(grouped_episodes)):
         gt_actions = []
         pred_actions = []
         
-        # Lists to store data for CSV
-        csv_pred_chunks = []
-        csv_gt_chunks = []
-        csv_start_frames = []
-        
-        # Use a while loop to jump by 'execution_horizon'
-        i = 0
-        pbar = tqdm(total=len(indices), leave=False)
-        
-        while i < len(indices):
-            idx = indices[i]
-            batch = dataset[idx]
-            
-            # A. Prepare Observation
-            obs = {
-                'proprio': batch['proprio'],
-                'tactile': batch['tactile']
-            }
-            
-            # B. Get Prediction Chunk
-            # Ask model for 'execution_horizon' steps
-            pred_chunk = runner.predict(obs, execution_horizon=cfg.execution_horizon)
-            
-            # C. Get Ground Truth Chunk
-            # We need the same slice from the ground truth
-            start_t = runner.config.dp.obs_horizon - 1
-            end_t = start_t + len(pred_chunk) # Use len(pred_chunk) in case we are at the end
-            
-            gt_chunk = batch['action'][start_t : end_t].cpu().numpy()
-            
-            # --- Store Data for CSV (Unnormalized) ---
-            # Unnormalize current chunks immediately for saving
-            curr_pred_unnorm = unnormalize_data(pred_chunk, runner.stats['action'])
-            curr_gt_unnorm = unnormalize_data(gt_chunk, runner.stats['action'])
-            
-            csv_pred_chunks.append(curr_pred_unnorm)
-            csv_gt_chunks.append(curr_gt_unnorm)
-            
-            # Create an array indicating the start frame for this chunk
-            # i is the current frame index relative to the start of the trajectory processing
-            chunk_len = len(pred_chunk)
-            csv_start_frames.append(np.full(chunk_len, i))
+        # Use chunked receding horizon: predict H steps at a time and advance by H
+        H = cfg.execution_horizon
+        p = 0
+        L = len(episode_idxs)
+        warned_short = False
+        while p < L:
+            idx = episode_idxs[p]
+            data = test_dataset[idx]
 
-            # D. Append for Plotting
-            # Since pred_chunk is (T, D), we can extend the list
-            if len(pred_actions) == 0:
-                pred_actions = pred_chunk
-                gt_actions = gt_chunk
+            # Prepare Obs: Add Batch Dim (1, T, ...)
+            obs = {}
+            for k, v in data.items():
+                if k == 'action':
+                    continue
+                obs[k] = v.unsqueeze(0)
+
+            # Predict H-step chunk
+            action_chunk = runner.predict(obs, execution_horizon=H)
+            # Normalize to numpy array with shape (H, D) or (1, H, D)
+            if hasattr(action_chunk, 'numpy'):
+                ach = action_chunk.numpy()
             else:
-                pred_actions = np.concatenate([pred_actions, pred_chunk], axis=0)
-                gt_actions = np.concatenate([gt_actions, gt_chunk], axis=0)
-            
-            # E. Stride Forward
-            step_size = len(pred_chunk) # Usually 5, unless at end of episode
-            i += step_size
-            pbar.update(step_size)
-            
-        pbar.close()
+                ach = np.asarray(action_chunk)
+            # If shape is (1, H, D) -> squeeze leading dim
+            if ach.ndim == 3 and ach.shape[0] == 1:
+                ach = ach[0]
 
-        # --- 4. Save CSV ---
-        # Concatenate all collected chunks
-        all_pred_unnorm = np.concatenate(csv_pred_chunks, axis=0)
-        all_gt_unnorm = np.concatenate(csv_gt_chunks, axis=0)
-        all_start_frames = np.concatenate(csv_start_frames, axis=0)
-        
-        # Construct DataFrame with interleaved columns
-        data_dict = {'start_frame': all_start_frames}
-        
-        for d in range(cfg.action_dim):
-            # Interleave: pred_dim_X then gt_dim_X
-            data_dict[f'pred_dim_{d}'] = all_pred_unnorm[:, d]
-            data_dict[f'gt_dim_{d}'] = all_gt_unnorm[:, d]
-            
-        df = pd.DataFrame(data_dict)
-        csv_save_name = f"traj_{ep_num}_h{cfg.execution_horizon}.csv"
-        csv_save_path = os.path.join(cfg.checkpoint_dir, csv_save_name)
-        df.to_csv(csv_save_path, index=False)
-        print(f"Saved CSV: {csv_save_path}")
+            # Determine how many steps remain in episode and how many predictions we actually got
+            remain = L - p
+            avail = ach.shape[0]
+            if (not warned_short) and avail < H:
+                print(f"[Warning] model returned {avail} prediction(s) < requested horizon {H}. "
+                      "Falling back to shorter chunks (replanning more frequently).")
+                warned_short = True
+            take = min(H, remain, avail)
+            for t in range(take):
+                pred_actions.append(ach[t])
 
-        # --- 5. Post-Process & Plot ---
-        # Un-normalize (using the accumulated arrays for plotting)
-        gt_real = unnormalize_data(gt_actions, runner.stats['action'])
-        pred_real = unnormalize_data(pred_actions, runner.stats['action'])
+                # Get GT corresponding frame at p + t
+                gt_idx = episode_idxs[p + t]
+                gt_seq = test_dataset[gt_idx]['action']
+                gt_actions.append(gt_seq[0].numpy())
+
+            # advance by number of steps consumed
+            p += take
+
+        gt_actions = np.array(gt_actions)
+        pred_actions = np.array(pred_actions)
         
-        # Create Plot
-        fig, axes = plt.subplots(cfg.action_dim, 1, figsize=(10, 15), sharex=True)
-        # Handle case if action_dim=1 (axes is not iterable)
-        if cfg.action_dim == 1: axes = [axes]
+        # 4. Un-normalize
+        if 'action' in runner.stats:
+            gt_real = unnormalize_data(gt_actions, runner.stats['action'])
+            pred_real = unnormalize_data(pred_actions, runner.stats['action'])
+        else:
+            gt_real = gt_actions
+            pred_real = pred_actions
+        
+        # 5. Plot
+        dim_labels = [
+            'Arm X', 'Arm Y', 'Arm Z', 'Arm Rx', 'Arm Ry', 'Arm Rz',
+            'Idx Bend', 'Idx PLP', 'Thb Bend', 'Thb PLP'
+        ]
+        
+        actual_dim = gt_real.shape[1]
+        fig, axes = plt.subplots(actual_dim, 1, figsize=(10, 2 * actual_dim), sharex=True)
+        if actual_dim == 1: axes = [axes]
         
         plt.subplots_adjust(hspace=0.1)
-        axes[0].set_title(f"Trajectory {ep_num} (Exec Horizon: {cfg.execution_horizon})", fontsize=14)
+        axes[0].set_title(f"Episode {ep_num}", fontsize=14)
         
-        for dim in range(cfg.action_dim):
+        for dim in range(actual_dim):
             ax = axes[dim]
             ax.plot(gt_real[:, dim], color='black', linewidth=2, label='Expert')
             ax.plot(pred_real[:, dim], color='red', linestyle='--', linewidth=2, label='Policy')
             
-            if dim < len(dim_labels):
-                ax.set_ylabel(dim_labels[dim], fontsize=10)
+            label = dim_labels[dim] if dim < len(dim_labels) else f"Dim {dim}"
+            ax.set_ylabel(label, fontsize=10)
             ax.grid(True, alpha=0.3)
             
             if dim == 0: ax.legend(loc="upper right")
-            if dim == cfg.action_dim - 1: ax.set_xlabel("Time Steps", fontsize=12)
+            if dim == actual_dim - 1: ax.set_xlabel("Time Steps", fontsize=12)
 
-        save_name = f"traj_{ep_num}_h{cfg.execution_horizon}.png"
-        save_path = os.path.join(cfg.checkpoint_dir, save_name)
-        plt.savefig(save_path, bbox_inches='tight', dpi=150)
-        plt.close(fig)
-        print(f"Saved Plot: {save_path}")
+        save_name = f"traj_{ep_num}.png"
+        plt.savefig(os.path.join(save_dir, save_name), dpi=100)
+        plt.close()
 
 if __name__ == "__main__":
     tyro.cli(main)

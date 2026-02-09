@@ -143,17 +143,15 @@ class Agent:
         wandb_logger=None,
     ):
         train_path = os.path.join(self.config.data_dir, self.config.train_data)
-        self.train_epi_dir = data_processing.get_epi_dir(train_path)
+        # self.train_epi_dir = data_processing.get_epi_dir(train_path) # Not used with new Dataset
+        
+        # --- MODIFIED: Pass only arguments the new Dataset class accepts ---
         train_dataset = Dataset(
             config=self.config,
-            data_path=self.train_epi_dir,
-            data_key=self.data_key,
-            stats=self.stats,
-            load_img=True,
-            transform=self.transform,
-            binarize_touch=self.binarize_touch,
+            data_path=train_path, # Pass the root string path
             split="train",
         )
+        
         train_loader = torch.utils.data.DataLoader(
             train_dataset, batch_size=batch_size,
             num_workers=self.num_workers, shuffle=True,
@@ -165,19 +163,15 @@ class Agent:
         test_paths = self.config.test_data.split("+")
         test_loaders = []
         for test_path in test_paths:
-            test_path = os.path.join(self.config.data_dir, test_path)
-            self.test_epi_dir = data_processing.get_epi_dir(test_path)
+            test_path_full = os.path.join(self.config.data_dir, test_path)
+            
+            # --- MODIFIED: Pass only arguments the new Dataset class accepts ---
             test_dataset = Dataset(
                 config=self.config,
-                data_path=self.test_epi_dir,
-                data_key=self.data_key,
-                stats=self.policy.data_stat,
-                load_img=True,
-                transform=self.eval_transform,
-                binarize_touch=self.binarize_touch,
+                data_path=test_path_full,
                 split="test",
-                percentiles=train_dataset.percentiles,
             )
+            
             test_loaders.append(torch.utils.data.DataLoader(
                 test_dataset, batch_size=batch_size,
                 num_workers=self.num_workers, shuffle=False,
@@ -185,10 +179,19 @@ class Agent:
             ))
 
         self.policy.set_lr_scheduler(len(train_loader), len(train_loader) * num_epoch)
-        if self.stats is None or self.percentiles is None:
+        
+        if self.stats is None:
             self.stats = train_dataset.stats
-            self.percentiles = train_dataset.percentiles
-            self.save_stats(save_path)
+            
+        # --- MODIFIED: Safe access to percentiles ---
+        if self.percentiles is None:
+            if hasattr(train_dataset, 'percentiles'):
+                self.percentiles = train_dataset.percentiles
+            else:
+                # Fallback to stats if percentiles are missing
+                self.percentiles = self.stats
+                
+        self.save_stats(save_path)
 
         self.policy.train(
             num_epoch,

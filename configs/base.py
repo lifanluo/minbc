@@ -41,7 +41,7 @@ class EncoderConfig:
 class DPConfig:
     encoder: EncoderConfig = EncoderConfig()
     obs_horizon: int = 1
-    act_horizon: int = 8
+    act_horizon: int = 6
     pre_horizon: int = 12
     diffusion_iters: int = 100
     diffusion_method: Literal["ddim", "ddpm"] = "ddpm"
@@ -82,7 +82,7 @@ class DataConfig:
     # Output action space
     pred_head_act: bool = False
     pred_waist_act: bool = False
-    base_action_dim: int = 24
+    base_action_dim: int = 24  # e.g., 6D arm + 4D hand
 
     @property
     def action_dim(self) -> int:
@@ -104,7 +104,7 @@ class MinBCConfig:
     train_data: str = 'screw_driver_1104_modified/train/'
     test_data: str = 'screw_driver_1104_modified/test/'
     output_name: str = 'debug'
-    policy_type: Literal["dp", "bc"] = "dp"
+    policy_type: Literal["dp", "bc"] = "bc"
     dp: DPConfig = DPConfig()
     optim: OptimConfig = OptimConfig()
     data: DataConfig = DataConfig()

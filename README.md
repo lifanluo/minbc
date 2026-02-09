@@ -31,6 +31,19 @@ Required packages:
 
 ## Quick Start
 
+### Visualize a Trajectory
+
+Use the interactive viewer to inspect `index_comp`, `thumb_comp`, and `rgb` frames
+with end-effector pose values from a trajectory folder:
+
+```bash
+python tools/visualize_trajectory.py --data-dir /home/lifan/Documents/GitHub/minbc/data/001
+```
+
+Controls:
+- Use the slider to jump to any frame.
+- Click **Stream** to play/pause streaming.
+
 ### Option 1: Training Without Images (Fastest)
 
 If your task doesn't require vision, use only proprioceptive data:
