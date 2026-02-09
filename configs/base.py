@@ -23,6 +23,20 @@ class EncoderConfig:
     xhand_tactile_input_dim: int = 1800
     xhand_tactile_net_dim: Tuple[int, ...] = (256, 256, 64)
 
+    # custom dataset: EE 6D and hand 6D
+    ee_6d_input_dim: int = 6
+    ee_6d_net_dim: Tuple[int, ...] = (256, 256, 64)
+
+    hand_6d_input_dim: int = 6
+    hand_6d_net_dim: Tuple[int, ...] = (256, 256, 64)
+
+    # custom dataset: nail/pad flow (flattened)
+    nail_flow_input_dim: int = 6
+    nail_flow_net_dim: Tuple[int, ...] = (256, 256, 64)
+
+    pad_flow_input_dim: int = 17028
+    pad_flow_net_dim: Tuple[int, ...] = (256, 256, 64)
+
     # image encoder and input
     im_net_output_dim: int = 32
     im_encoder_frozen: bool = False
@@ -56,6 +70,7 @@ class DataConfig:
     # Data modalities to use
     # Example with image: ("img", "joint_positions", "xhand_pos")
     # Example without image: ("joint_positions", "joint_velocities", "eef_speed", "ee_pos_quat", "xhand_pos", "xhand_tactile")
+    # Custom dataset example: ("ee_6d", "hand_6d", "index_nail_flow", "index_pad_flow", "thumb_nail_flow", "thumb_pad_flow", "img")
     # data_key: Tuple[str, ...] = ("img", "joint_positions", "xhand_pos")
     data_key: Tuple[str, ...] = ("joint_positions", "xhand_pos", "xhand_tactile")
     
@@ -75,6 +90,15 @@ class DataConfig:
     pred_head_act: bool = False
     pred_waist_act: bool = False
     base_action_dim: int = 24
+
+    # Custom dataset dims (EE 6D + hand 6D + flow)
+    ee_6d_dim: int = 6
+    hand_6d_dim: int = 6
+    nail_flow_dim: int = 6
+    pad_flow_height: int = 99
+    pad_flow_width: int = 86
+    pad_flow_channels: int = 2
+    pad_flow_scale: int = 3
 
     @property
     def action_dim(self) -> int:

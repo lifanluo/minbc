@@ -61,7 +61,21 @@ class VanillaBC(nn.Module):
         self.device = device
         self.data_key = config.data.data_key
         self.image_num = len(config.data.im_key)
-        possible_input_type = ["img", "joint_positions","joint_velocities", "eef_speed", "ee_pos_quat", "xhand_pos", "xhand_tactile"]
+        possible_input_type = [
+            "img",
+            "joint_positions",
+            "joint_velocities",
+            "eef_speed",
+            "ee_pos_quat",
+            "xhand_pos",
+            "xhand_tactile",
+            "ee_6d",
+            "hand_6d",
+            "index_nail_flow",
+            "index_pad_flow",
+            "thumb_nail_flow",
+            "thumb_pad_flow",
+        ]
         self.im_encoder = config.data.im_encoder
         self.policy_input_types = [
             rt for rt in possible_input_type if rt in self.data_key
@@ -164,6 +178,42 @@ class VanillaBC(nn.Module):
                 encoder_config.xhand_tactile_net_dim,
             )
             obs_dim += encoder_config.xhand_tactile_net_dim[-1]
+        if 'ee_6d' in self.data_key:
+            self.encoders["ee_6d_encoder"] = StateEncoder(
+                encoder_config.ee_6d_input_dim,
+                encoder_config.ee_6d_net_dim,
+            )
+            obs_dim += encoder_config.ee_6d_net_dim[-1]
+        if 'hand_6d' in self.data_key:
+            self.encoders["hand_6d_encoder"] = StateEncoder(
+                encoder_config.hand_6d_input_dim,
+                encoder_config.hand_6d_net_dim,
+            )
+            obs_dim += encoder_config.hand_6d_net_dim[-1]
+        if 'index_nail_flow' in self.data_key:
+            self.encoders["index_nail_flow_encoder"] = StateEncoder(
+                encoder_config.nail_flow_input_dim,
+                encoder_config.nail_flow_net_dim,
+            )
+            obs_dim += encoder_config.nail_flow_net_dim[-1]
+        if 'thumb_nail_flow' in self.data_key:
+            self.encoders["thumb_nail_flow_encoder"] = StateEncoder(
+                encoder_config.nail_flow_input_dim,
+                encoder_config.nail_flow_net_dim,
+            )
+            obs_dim += encoder_config.nail_flow_net_dim[-1]
+        if 'index_pad_flow' in self.data_key:
+            self.encoders["index_pad_flow_encoder"] = StateEncoder(
+                encoder_config.pad_flow_input_dim,
+                encoder_config.pad_flow_net_dim,
+            )
+            obs_dim += encoder_config.pad_flow_net_dim[-1]
+        if 'thumb_pad_flow' in self.data_key:
+            self.encoders["thumb_pad_flow_encoder"] = StateEncoder(
+                encoder_config.pad_flow_input_dim,
+                encoder_config.pad_flow_net_dim,
+            )
+            obs_dim += encoder_config.pad_flow_net_dim[-1]
 
         global_cond_dim = obs_dim * self.obs_horizon
         if self.temporal_aggregation_function == "transformer":

@@ -1,0 +1,22 @@
+🧩 第一步：把原始数据转换成 PKL
+✅ 转换 train + test（推荐）
+python3 tools/convert_custom_dataset.py \
+  --input-root /home/lifan/Documents/GitHub/minbc/data/card \
+  --output-root /home/lifan/Documents/GitHub/minbc/data/card_train \
+  --pad-flow-height 99 \
+  --pad-flow-width 86
+
+🚀 第二步：开始训练（你的新模态）
+python3 train.py train \
+  --gpu 0 \
+  --data_dir /home/lifan/Documents/GitHub/minbc/data \
+  --train_data /home/lifan/Documents/GitHub/minbc/data/card_train/train \
+  --test_data /home/lifan/Documents/GitHub/minbc/data/card_train/test \
+  --data.data-key ee_6d hand_6d index_nail_flow index_pad_flow thumb_nail_flow thumb_pad_flow \
+  --data.base-action-dim 12 \
+  --optim.batch-size 128 \
+  --optim.num-epoch 3000 \
+  --output-dir /home/lifan/Documents/GitHub/minbc/outputs \
+  --output-name card_train2
+
+tensorboard --logdir /home/lifan/Documents/GitHub/minbc/outputs/card_train

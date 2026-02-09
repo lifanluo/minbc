@@ -17,8 +17,26 @@ RT_DIM = {
     "eef_speed": 12,
     "ee_pos_quat": 12,
     "xhand_pos": 12,
-    "xhand_tactile": 1800
+    "xhand_tactile": 1800,
 }
+
+
+def get_rt_dim(config: MinBCConfig, key: str) -> int:
+    if key in RT_DIM:
+        return RT_DIM[key]
+    if key == "ee_6d":
+        return config.data.ee_6d_dim
+    if key == "hand_6d":
+        return config.data.hand_6d_dim
+    if key in {"index_nail_flow", "thumb_nail_flow"}:
+        return config.data.nail_flow_dim
+    if key in {"index_pad_flow", "thumb_pad_flow"}:
+        return (
+            config.data.pad_flow_height
+            * config.data.pad_flow_width
+            * config.data.pad_flow_channels
+        )
+    raise KeyError(f"Unknown data key '{key}'. Please add it to RT_DIM or get_rt_dim.")
 
 
 def create_sample_indices(
@@ -178,7 +196,7 @@ class Dataset(torch.utils.data.Dataset):
                 )
             else:
                 train_data["data"][rt] = np.zeros(
-                    (num_data_point, RT_DIM[rt]), dtype=np.float32
+                    (num_data_point, get_rt_dim(config, rt)), dtype=np.float32
                 )
         train_data["meta"] = {"episode_ends": []}
 

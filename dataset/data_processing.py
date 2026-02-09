@@ -8,6 +8,46 @@ import numpy as np
 def from_pickle(config, path, load_img=True):
     with open(path, "rb") as f:
         data = pickle.load(f)
+    # ensure backward/alternate key names are available for downstream code
+    # map common alternate names used in different dataset exports to the
+    # canonical keys expected elsewhere in the repo
+    if "action" not in data and "actions" in data:
+        # ensure action length matches config expectation; trim if longer
+        try:
+            base_dim = config.data.base_action_dim
+            a = data["actions"]
+            if hasattr(a, "shape") and len(a) >= base_dim:
+                data["action"] = np.asarray(a[:base_dim])
+            else:
+                data["action"] = np.asarray(a)
+        except Exception:
+            data["action"] = data["actions"]
+    # joint positions: many datasets store full `states`; canonical code expects
+    # `joint_positions` of length 12. Try to extract a sensible slice when
+    # possible (take indices 12:24 if states is longer than 12).
+    if "joint_positions" not in data and "states" in data:
+        s = data["states"]
+        try:
+            if len(s) >= 24:
+                data["joint_positions"] = np.asarray(s[12:24])
+            elif len(s) >= 12:
+                data["joint_positions"] = np.asarray(s[:12])
+        except Exception:
+            pass
+    # joint velocities mapping
+    if "joint_velocities" not in data and "joint_vel" in data:
+        jv = data["joint_vel"]
+        try:
+            data["joint_velocities"] = np.asarray(jv[:12])
+        except Exception:
+            pass
+    # hand position mapping
+    if "xhand_pos" not in data and "hand_states" in data:
+        try:
+            data["xhand_pos"] = np.asarray(data["hand_states"])
+        except Exception:
+            pass
+
     if "base_rgb" not in data and load_img:
         # note: base_rgb is only for HATO compatibility
         rgb_keys = config.data.im_key

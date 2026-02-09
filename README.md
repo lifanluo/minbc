@@ -261,6 +261,66 @@ python train.py train \
 # Without images (only proprioceptive)
 python train.py train \
   --data.data-key joint_positions joint_velocities eef_speed
+
+### Custom Dataset: EE 6D + Hand 6D + Flow (+ optional RGB)
+
+If your raw dataset lives under paths like `/home/lifan/Documents/GitHub/minbc/data/train/001` with a `log.csv`
+and per-step files (RGB, flows), convert it into MinBC's `.pkl` format first.
+
+#### 1) Convert raw episodes into PKLs
+
+```bash
+python tools/convert_custom_dataset.py \
+  --input-root /home/lifan/Documents/GitHub/minbc/data \
+  --output-root /home/lifan/Documents/GitHub/minbc/data/custom_gr1 \
+  --pad-flow-height 99 \
+  --pad-flow-width 86
+```
+
+Options:
+- `--include-rgb` to store RGB as `base_rgb` in each PKL.
+- `--max-steps N` for quick conversion tests.
+
+The converter will create:
+
+```
+data/custom_gr1/
+  train/
+    001/
+      step_000000.pkl
+      step_000001.pkl
+      ...
+```
+
+Each PKL contains:
+- `ee_6d` (6D: `ee_x_mm`, `ee_y_mm`, `ee_z_mm`, `ee_rx_deg`, `ee_ry_deg`, `ee_rz_deg`)
+- `hand_6d` (6D: `idx_bend`, `idx_plp`, `idx_knuck`, `thb_bend`, `thb_plp`, `thb_knuck`)
+- `index_nail_flow`, `index_pad_flow`, `thumb_nail_flow`, `thumb_pad_flow` (flattened)
+- `base_rgb` (optional)
+- `action` (12D = ee_6d + hand_6d)
+
+#### 2) Train with custom data keys
+
+```bash
+python train.py train \
+  --gpu 0 \
+  --data_dir /home/lifan/Documents/GitHub/minbc/data \
+  --train_data custom_gr1/train \
+  --test_data custom_gr1/test \
+  --data.data-key ee_6d hand_6d index_nail_flow index_pad_flow thumb_nail_flow thumb_pad_flow \
+  --data.base-action-dim 12 \
+  --optim.batch-size 128 \
+  --optim.num-epoch 300
+```
+
+If you also converted RGB, add `img` to `--data.data-key` and set the image encoder options as usual.
+
+#### 3) Validate a converted episode (optional)
+
+```bash
+python tools/validate_custom_dataset.py \
+  --episode-dir /home/lifan/Documents/GitHub/minbc/data/custom_gr1/train/001
+```
 ```
 
 ### Data Paths
