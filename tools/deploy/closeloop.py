@@ -3,10 +3,13 @@ import time
 import tyro
 import numpy as np
 from dataclasses import dataclass
-from agents.diffusion.diffusion_agent_sync import DiffusionAgent
-from agents.diffusion.diffusion_agent_client import DiffusionAgentClient
-
-from camera_node import ZMQClientCamera
+from ...agents.diffusion.diffusion_agent_sync import DiffusionAgent
+from ...agents.diffusion.diffusion_agent_client import DiffusionAgentClient
+from ...utils.utils import MovingAverageQueue
+try:
+    from .camera_node import ZMQClientCamera
+except Exception:
+    ZMQClientCamera = None
 
 @dataclass
 class EvalConfig:
@@ -24,11 +27,12 @@ def main(config):
     else:
         dp_agent = DiffusionAgent(ckpt_path=config.ckpt_path)
 
-    camera_client = Camera()
+    if ZMQClientCamera is None:
+        raise RuntimeError("ZMQClientCamera not available; camera_node.py missing")
+    camera_client = ZMQClientCamera()
     # env = (rate=100, gripper_type="ability_haGR1nd")
     obs_dict = env.reset()
 
-    from utils.utils import MovingAverageQueue
     action_queue = MovingAverageQueue(20, 26, 0.7)
 
     # sometimes ability hand is not working, this is only for monitor

@@ -1,6 +1,7 @@
 import argparse
 import json
 import sys
+import time
 from dataclasses import fields
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -55,7 +56,12 @@ def _prepare_obs_step(step: Dict[str, Any], data_key: List[str]) -> Dict[str, An
     return obs
 
 
-def _build_obs_deque(data: List[Dict[str, Any]], idx: int, obs_horizon: int, data_key: List[str]) -> List[Dict[str, Any]]:
+def _build_obs_deque(
+    data: List[Dict[str, Any]],
+    idx: int,
+    obs_horizon: int,
+    data_key: List[str],
+) -> List[Dict[str, Any]]:
     start = idx - obs_horizon + 1
     obs_steps = []
     for offset in range(obs_horizon):
@@ -98,49 +104,8 @@ def _plot_actions(
     plt.close(fig)
 
 
-def _infer_policy_type_from_checkpoint(ckpt_path: Path) -> Optional[str]:
-    state_dict = torch.load(ckpt_path, map_location="cpu", weights_only=True)
-    keys = set(state_dict.keys())
-    if any(
-        key.startswith("input_proj")
-        or key.startswith("cond_encoder")
-        or "unet" in key
-        or key.startswith("noise")
-        for key in keys
-    ):
-        return "dp"
-    if any(key.startswith("encoders.") or key.startswith("encoder.") for key in keys):
-        return "bc"
-    return None
-
-
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Visualize checkpoint predictions vs ground truth.")
-    parser.add_argument("--run-dir", type=Path, required=True, help="Training output directory containing config.json.")
-    parser.add_argument("--data-dir", type=Path, required=True, help="Dataset root with train/test splits.")
-    parser.add_argument("--split", dest="splits", nargs="+", default=["test"], help="Splits to visualize.")
-    parser.add_argument("--episode", dest="episodes", nargs="*", default=None, help="Episode IDs to visualize.")
-    parser.add_argument("--ckpt", default="model_best.ckpt", help="Checkpoint filename to load.")
-    parser.add_argument("--max-steps", type=int, default=200, help="Max steps per episode.")
-    parser.add_argument("--action-index", type=int, default=0, help="Index of action in horizon to plot.")
-    parser.add_argument("--out-dir", type=Path, default=None, help="Output directory for plots.")
-    parser.add_argument("--device", default=None, help="Override device, e.g. cpu or cuda:0.")
-    parser.add_argument("--policy-type", choices=["dp", "bc"], default=None, help="Force policy type.")
-    return parser.parse_args()
-
-
-def main() -> None:
-    args = _parse_args()
-    run_dir = args.run_dir
-    data_dir = args.data_dir
-    splits = args.splits
-    ckpt = args.ckpt
-    max_steps = args.max_steps
-    action_index = args.action_index
-    out_dir = args.out_dir if args.out_dir is not None else run_dir / "vis"
-    device_override = args.device
-    policy_type_override = args.policy_type
-    action_names = [
+def _default_action_names() -> List[str]:
+    return [
         "ee_x",
         "ee_y",
         "ee_z",
@@ -154,9 +119,43 @@ def main() -> None:
         "thb_plp",
         "thb_knuck",
     ]
-    config_path = run_dir / "config.json"
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Visualize DP training results: compare predicted vs GT actions and save plots."
+    )
+    parser.add_argument("--run-dir", type=Path, required=True, help="Output run directory (contains config.json).")
+    parser.add_argument("--data-dir", type=Path, required=True, help="Dataset root (contains train/test).")
+    parser.add_argument("--ckpt", type=str, default="model_best.ckpt", help="Checkpoint filename.")
+    parser.add_argument("--splits", nargs="+", default=["train", "test"], help="Splits to visualize.")
+    parser.add_argument("--max-steps", type=int, default=200, help="Max steps per episode.")
+    parser.add_argument("--action-index", type=int, default=0, help="Index within action horizon.")
+    parser.add_argument("--device", type=str, default=None, help="Override device (e.g., cpu, cuda:0).")
+    parser.add_argument("--out-dir", type=Path, default=None, help="Output directory for plots.")
+    parser.add_argument(
+        "--episodes",
+        nargs="+",
+        default=None,
+        help="Optional list of episode folder names to visualize (e.g., 003 006).",
+    )
+    parser.add_argument(
+        "--max-episodes",
+        type=int,
+        default=None,
+        help="Optional cap on number of episodes per split.",
+    )
+    parser.add_argument(
+        "--log-every",
+        type=int,
+        default=25,
+        help="Print progress every N steps per episode.",
+    )
+    args = parser.parse_args()
+
+    config_path = args.run_dir / "config.json"
     if not config_path.exists():
-        raise FileNotFoundError(f"config.json not found in {run_dir}")
+        raise FileNotFoundError(f"config.json not found in {args.run_dir}")
 
     with config_path.open("r") as f:
         cfg = json.load(f)
@@ -165,27 +164,12 @@ def main() -> None:
     data_key = list(config.data.data_key)
     load_img = "img" in data_key
 
-    device = device_override
+    device = args.device
     if device is None:
         if torch.cuda.is_available() and config.gpu is not None:
             device = f"cuda:{config.gpu}"
         else:
             device = "cpu"
-
-    ckpt_path = run_dir / ckpt
-    if not ckpt_path.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
-
-    if policy_type_override is not None:
-        config = merge_dataclass_and_dict(config, {"policy_type": policy_type_override})
-    else:
-        inferred = _infer_policy_type_from_checkpoint(ckpt_path)
-        if inferred is not None and inferred != config.policy_type:
-            print(
-                f"Warning: config policy_type={config.policy_type}, but checkpoint looks like {inferred}. "
-                "Overriding policy_type for visualization."
-            )
-            config = merge_dataclass_and_dict(config, {"policy_type": inferred})
 
     agent = Agent(
         config,
@@ -197,23 +181,31 @@ def main() -> None:
         device=device,
     )
 
+    ckpt_path = args.run_dir / args.ckpt
+    if not ckpt_path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
     agent.load(str(ckpt_path))
 
     obs_horizon = config.dp.obs_horizon
     action_horizon = config.dp.act_horizon
-    if action_index < 0 or action_index >= action_horizon:
+    if args.action_index < 0 or args.action_index >= action_horizon:
         raise ValueError(f"action_index must be in [0, {action_horizon - 1}]")
 
-    for split in splits:
-        split_dir = data_dir / split
+    out_dir = args.out_dir if args.out_dir is not None else (args.run_dir / "vis_dp")
+    action_names = _default_action_names()
+
+    for split in args.splits:
+        split_dir = args.data_dir / split
         if not split_dir.exists():
             print(f"Skip split not found: {split_dir}")
             continue
 
         episodes = sorted([p for p in split_dir.iterdir() if p.is_dir()])
         if args.episodes:
-            episode_set = set(args.episodes)
-            episodes = [p for p in episodes if p.name in episode_set]
+            allowed = set(args.episodes)
+            episodes = [p for p in episodes if p.name in allowed]
+        if args.max_episodes is not None:
+            episodes = episodes[: args.max_episodes]
         if not episodes:
             print(f"Skip empty split: {split_dir}")
             continue
@@ -223,21 +215,24 @@ def main() -> None:
         summary = []
 
         for episode_dir in episodes:
+            ep_t0 = time.time()
+            print(f"Loading episode {episode_dir.name} ({split})...")
             data = data_processing.iterate(str(episode_dir), config, load_img=load_img)
             if not data:
                 print(f"Skip empty episode: {episode_dir.name}")
                 continue
 
-            steps = min(len(data), max_steps)
+            steps = min(len(data), args.max_steps)
             preds, gts = [], []
             for i in range(steps):
                 obs_deque = _build_obs_deque(data, i, obs_horizon, data_key)
                 pred_seq = agent.predict(obs_deque)
-                print(f"Episode {episode_dir.name} | Step {i} | Predicted seq shape: {pred_seq.shape}")
-                pred_action = pred_seq[action_index]
+                pred_action = pred_seq[args.action_index]
                 gt_action = data[i]["action"]
                 preds.append(pred_action)
                 gts.append(gt_action)
+                if args.log_every > 0 and (i + 1) % args.log_every == 0:
+                    print(f"  {episode_dir.name} step {i + 1}/{steps}")
 
             preds = np.stack(preds)
             gts = np.stack(gts)
@@ -255,14 +250,17 @@ def main() -> None:
             npy_path = split_out_dir / f"pred_vs_gt_{episode_dir.name}.npz"
             np.savez(npy_path, pred=preds, gt=gts, mse=mse)
 
-            summary.append({
-                "episode": episode_dir.name,
-                "steps": int(steps),
-                "mean_mse": float(mse.mean()),
-                "plot": str(plot_path),
-                "data": str(npy_path),
-            })
+            summary.append(
+                {
+                    "episode": episode_dir.name,
+                    "steps": int(steps),
+                    "mean_mse": float(mse.mean()),
+                    "plot": str(plot_path),
+                    "data": str(npy_path),
+                }
+            )
             print(f"Saved plot: {plot_path}")
+            print(f"Finished {episode_dir.name} in {time.time() - ep_t0:.1f}s")
 
         summary_path = split_out_dir / "summary.json"
         with summary_path.open("w") as f:

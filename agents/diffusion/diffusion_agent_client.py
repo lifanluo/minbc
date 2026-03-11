@@ -5,9 +5,8 @@ import collections
 import numpy as np
 from typing import Any, Dict
 from dataclasses import fields
+from ...configs.base import MinBCConfig
 from ..zmq_server_client import ZMQInferenceClient, DEFAULT_INFERENCE_PORT
-from configs.base import MinBCConfig
-
 
 LEFT_HAND_IDX = list(range(7, 13))
 RIGHT_HAND_IDX = list(range(20, 26))

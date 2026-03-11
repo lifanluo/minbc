@@ -5,10 +5,10 @@ import numpy as np
 import torch.utils.data
 from glob import glob
 from typing import Tuple, Literal, Dict, Optional
-from dataset import data_processing
-from configs.base import MinBCConfig
-from utils.obs import get_observation
-from utils.obs import minmax_norm_data, minmax_unnorm_data
+from . import data_processing
+from ..configs.base import MinBCConfig
+from ..utils.obs import get_observation
+from ..utils.obs import minmax_norm_data, minmax_unnorm_data
 
 
 RT_DIM = {
@@ -264,6 +264,13 @@ class Dataset(torch.utils.data.Dataset):
             if data_type == "img":
                 continue  # image normalization is different
             d = train_data[data_type]
+
+            if d.shape[0] == 0:
+                raise ValueError(
+                    f"Empty data for '{data_type}'. "
+                    "Please check your dataset conversion output and ensure "
+                    "there are frames for this modality."
+                )
 
             if split == "train":
                 p2 = np.percentile(d, 2, axis=0)

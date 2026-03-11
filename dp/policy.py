@@ -9,13 +9,13 @@ from diffusers.optimization import get_scheduler
 from diffusers.schedulers.scheduling_ddim import DDIMScheduler
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 from diffusers.training_utils import EMAModel
-from dp.models.cond_unet import ConditionalUnet1D
+from .models.cond_unet import ConditionalUnet1D
 from torch import nn
 from torch.nn.functional import mse_loss
 from torch.utils.tensorboard import SummaryWriter
-from configs.base import MinBCConfig
-from utils.obs import minmax_norm_data, minmax_unnorm_data
-from utils.misc import tprint, pprint
+from ..configs.base import MinBCConfig
+from ..utils.obs import minmax_norm_data, minmax_unnorm_data
+from ..utils.misc import tprint, pprint
 
 
 class DiffusionPolicy:
@@ -59,11 +59,10 @@ class DiffusionPolicy:
         self.device = device
         # TODO: transformer https://github.com/real-stanford/universal_manipulation_interface/blob/main/diffusion_policy/policy/diffusion_transformer_hybrid_image_policy.py
         if dit:
-            noise_pred_net = DiT()
-        else:
-            noise_pred_net = ConditionalUnet1D(
-                config, input_dim=action_dim, device=self.device
-            )
+            raise NotImplementedError("DiT backbone is not implemented in this repo.")
+        noise_pred_net = ConditionalUnet1D(
+            config, input_dim=action_dim, device=self.device
+        )
         # the final arch has 2 parts
         self.model = noise_pred_net
 
@@ -169,10 +168,6 @@ class DiffusionPolicy:
             _t = time.time()
             for data in train_loader:
                 # data normalized in dataset
-                gt_action = data["action"].to(self.device)
-                batch_size = gt_action.shape[0]
-
-                # # visualize image
                 # a = data['img'][0, 0, 0]  # batch, horizon, num_image
                 # b = data['img'][0, 0, 1]
                 # a = a * 255
@@ -187,6 +182,9 @@ class DiffusionPolicy:
 
                 ### IMPT: make sure input is always in this order
                 # eef, hand_pos, img, pos, touch
+
+                gt_action = data["action"].to(self.device)
+                batch_size = gt_action.shape[0]
 
                 # sample noise to add to actions
                 noise = torch.randn(gt_action.shape, device=self.device)

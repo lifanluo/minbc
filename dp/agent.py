@@ -6,11 +6,11 @@ import torch.utils.data
 
 from torch import nn
 from torchvision import transforms
-from dataset import data_processing
-from dataset.dataset import Dataset
-from dp.policy import DiffusionPolicy
-from dp.vanilla_bc import VanillaBCPolicy
-from configs.base import MinBCConfig
+from ..dataset import data_processing
+from ..dataset.dataset import Dataset
+from ..dp.policy import DiffusionPolicy
+from ..dp.vanilla_bc import VanillaBCPolicy
+from ..configs.base import MinBCConfig
 
 
 class Agent:

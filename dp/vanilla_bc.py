@@ -7,13 +7,13 @@ import torch.distributed as dist
 
 from diffusers.optimization import get_scheduler
 from diffusers.training_utils import EMAModel
-from dp.models.simple_act_pred import VanillaBC
+from .models.simple_act_pred import VanillaBC
 from torch import nn
 from torch.nn.functional import mse_loss
 from torch.utils.tensorboard import SummaryWriter
-from configs.base import MinBCConfig
-from utils.obs import minmax_norm_data, minmax_unnorm_data
-from utils.misc import tprint, pprint
+from ..configs.base import MinBCConfig
+from ..utils.obs import minmax_norm_data, minmax_unnorm_data
+from ..utils.misc import tprint, pprint
 
 
 class VanillaBCPolicy:

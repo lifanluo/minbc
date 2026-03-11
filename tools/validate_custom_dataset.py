@@ -1,8 +1,8 @@
 import argparse
 from pathlib import Path
 
-from configs.base import MinBCConfig
-from dataset.dataset import Dataset
+from ..configs.base import MinBCConfig
+from ..dataset.dataset import Dataset
 
 
 def main() -> None:

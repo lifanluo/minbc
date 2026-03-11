@@ -1,12 +1,16 @@
 import time
 from dataclasses import dataclass
 from glob import glob
-from envs.gr1 import GR1
+try:
+    from envs.gr1 import GR1
+except ImportError:  # optional dependency
+    GR1 = None
 import tyro
 import numpy as np
-from agents.diffusion.diffusion_agent_sync import DiffusionAgent
-from agents.diffusion.diffusion_agent_client import DiffusionAgentClient
-from dataset.data_processing import iterate
+from ...agents.diffusion.diffusion_agent_sync import DiffusionAgent
+from ...agents.diffusion.diffusion_agent_client import DiffusionAgentClient
+from ...dataset.data_processing import iterate
+from ...utils.utils import MovingAverageQueue
 
 
 @dataclass
@@ -22,10 +26,9 @@ def main(config):
     interval = 1 / frequency  # Time per cycle in seconds
 
     if config.hardware_eval:
-        env = GR1(
-            rate=100,
-            gripper_type="ability_hand",
-        )
+        if GR1 is None:
+            raise RuntimeError("envs.gr1 is not available; install hardware env to use --hardware_eval")
+        env = GR1(rate=100, gripper_type="ability_hand")
 
     if config.use_async:
         dp_agent = DiffusionAgentClient(ckpt_path=config.ckpt_path, temporal_ensemble_mode="avg")
@@ -39,7 +42,6 @@ def main(config):
     cnt = 0
     for data_dir in test_trajs:
         data = iterate(data_dir, dp_agent.config)
-        from utils.utils import MovingAverageQueue
         action_queue = MovingAverageQueue(20, 26, 0.7)
         for i, obs in enumerate(data):
             # supposed to be 10Hz

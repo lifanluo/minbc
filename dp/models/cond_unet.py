@@ -3,7 +3,7 @@ from typing import Union
 
 import torch
 from torch import nn
-from dp.models.vision.resnet import ResnetEncoder
+from .vision.resnet import ResnetEncoder
 
 
 class MLP(nn.Module):

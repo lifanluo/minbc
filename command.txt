@@ -1,22 +1,69 @@
 🧩 第一步：把原始数据转换成 PKL
 ✅ 转换 train + test（推荐）
 python3 tools/convert_custom_dataset.py \
-  --input-root /home/lifan/Documents/GitHub/minbc/data/card \
-  --output-root /home/lifan/Documents/GitHub/minbc/data/card_train \
+  --input-root /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/data/20260210 \
+  --output-root /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/data/20260210_test \
   --pad-flow-height 99 \
   --pad-flow-width 86
 
 🚀 第二步：开始训练（你的新模态）
-python3 train.py train \
+DP：
+cd /home/lifan/Documents/GitHub/hand_ws
+PYTHONPATH=/home/lifan/Documents/GitHub/hand_ws/src/hand_control \
+python3 -m hand_control.minbc.train train \
   --gpu 0 \
   --data_dir /home/lifan/Documents/GitHub/minbc/data \
-  --train_data /home/lifan/Documents/GitHub/minbc/data/card_train/train \
-  --test_data /home/lifan/Documents/GitHub/minbc/data/card_train/test \
+  --train_data /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/data/20260210_test/train \
+  --test_data /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/data/20260210_test/test \
+  --data.data-key ee_6d hand_6d index_nail_flow index_pad_flow thumb_nail_flow thumb_pad_flow \
+  --data.base-action-dim 12 \
+  --policy-type dp \
+  --dp.diffusion-iters 100 \
+  --dp.obs-horizon 1 \
+  --dp.act-horizon 8 \
+  --dp.pre-horizon 16 \
+  --optim.batch-size 128 \
+  --optim.num-epoch 3000 \
+  --output-dir /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/outputs \
+  --output-name card_train3
+
+BC：
+cd /home/lifan/Documents/GitHub/hand_ws
+PYTHONPATH=/home/lifan/Documents/GitHub/hand_ws/src/hand_control \
+python3 -m hand_control.minbc.train train \
+  --gpu 0 \
+  --data_dir /home/lifan/Documents/GitHub/minbc/data \
+  --train_data /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/data/20260210_test/train \
+  --test_data /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/data/20260210_test/test \
   --data.data-key ee_6d hand_6d index_nail_flow index_pad_flow thumb_nail_flow thumb_pad_flow \
   --data.base-action-dim 12 \
   --optim.batch-size 128 \
   --optim.num-epoch 3000 \
-  --output-dir /home/lifan/Documents/GitHub/minbc/outputs \
-  --output-name card_train2
+  --output-dir /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/outputs \
+  --output-name card_train_bc
 
-tensorboard --logdir /home/lifan/Documents/GitHub/minbc/outputs/card_train
+tensorboard --logdir /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/outputs/card_train_bc_0211
+
+可视化：
+DP：
+cd /home/lifan/Documents/GitHub/hand_ws
+PYTHONPATH=/home/lifan/Documents/GitHub/hand_ws/src/hand_control \
+python3 -m hand_control.minbc.tools.visualize_dp_results \
+  --run-dir /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/outputs/card_train3 \
+  --data-dir /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/data/20260210_test \
+  --ckpt model_best.ckpt \
+  --max-steps 200 \
+  --action-index 0 \
+  --log-every 10
+
+BC：
+cd /home/lifan/Documents/GitHub/hand_ws
+PYTHONPATH=/home/lifan/Documents/GitHub/hand_ws/src/hand_control \
+python3 -m hand_control.minbc.tools.visualize_checkpoint_vs_gt \
+  --run-dir /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/outputs/card_train_bc \
+  --data-dir /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/data/20260210_test \
+  --split test \
+  --episode 010 \
+  --max-steps 200 \
+  --action-index 0 \
+  --out-dir /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/outputs/card_train_bc/vis

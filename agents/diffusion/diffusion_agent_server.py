@@ -7,12 +7,10 @@ import collections
 import numpy as np
 from typing import Any, Dict
 from dataclasses import fields
-from utils.obs import get_observation
-
-from dp.agent import Agent as DPAgent
-from configs.base import MinBCConfig
-
-from agents.zmq_server_client import ZMQInferenceServer
+from ...utils.obs import get_observation
+from ...dp.agent import Agent as DPAgent
+from ...configs.base import MinBCConfig
+from ..zmq_server_client import ZMQInferenceServer
 
 
 def merge_dataclass_and_dict(dataclass_obj: Any, update_dict: dict) -> Any:

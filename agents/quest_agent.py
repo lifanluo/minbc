@@ -2,13 +2,13 @@ import time
 import mujoco
 import numpy as np
 from typing import Literal, Dict
-from agents.agent import Agent
-from utils.rotations import matrix_to_quat_wxyz
-from utils.utils import MovingAverageQueue
-from utils.sound import play_beep
+from .agent import Agent
+from ..utils.rotations import matrix_to_quat_wxyz
+from ..utils.utils import MovingAverageQueue
+from ..utils.sound import play_beep
 from dm_control import mjcf
-from utils.ik import qpos_from_site_pose
-from oculus_reader.reader import OculusReader
+from ..utils.ik import qpos_from_site_pose
+from ..oculus_reader.reader import OculusReader
 import mujoco
 import mujoco.viewer
 # assuming looking from robot back

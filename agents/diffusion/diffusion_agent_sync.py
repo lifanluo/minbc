@@ -8,9 +8,9 @@ from dataclasses import fields
 from utils.obs import get_observation
 
 from configs.base import MinBCConfig
-from dp.agent import Agent as DPAgent
-
-
+from ...utils.obs import get_observation
+from ...configs.base import MinBCConfig
+from ...dp.agent import Agent as DPAgent
 LEFT_HAND_IDX = list(range(7, 13))
 RIGHT_HAND_IDX = list(range(20, 26))
 

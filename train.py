@@ -6,9 +6,9 @@ import random
 import numpy as np
 import dataclasses
 
-from dp.agent import Agent
-from configs.base import MinBCConfig
-from utils.misc import set_seed, git_hash, git_diff_config
+from .dp.agent import Agent
+from .configs.base import MinBCConfig
+from .utils.misc import set_seed, git_hash, git_diff_config
 
 
 if __name__ == "__main__":

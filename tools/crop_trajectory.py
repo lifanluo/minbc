@@ -5,8 +5,8 @@ This moves deleted files into a backup folder inside the trajectory directory
 so deletion is reversible.
 
 Example:
-    python tools/crop_trajectory.py /home/lifan/Documents/GitHub/minbc/data/001 --last-frame 103 --dry-run
-    python tools/crop_trajectory.py /home/lifan/Documents/GitHub/minbc/data/017 --last-frame 120 --yes
+    python tools/crop_trajectory.py /home/lifan/Documents/GitHub/minbc/data/003 --last-frame 103 --dry-run
+    python tools/crop_trajectory.py /home/lifan/Documents/GitHub/hand_ws/src/hand_control/hand_control/minbc/data/20260210/025 --last-frame 114 --yes
 """
 from __future__ import annotations
 

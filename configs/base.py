@@ -47,7 +47,7 @@ class EncoderConfig:
 class DPConfig:
     encoder: EncoderConfig = EncoderConfig()
     obs_horizon: int = 1
-    act_horizon: int = 8
+    act_horizon: int = 12
     pre_horizon: int = 16
     diffusion_iters: int = 100
     diffusion_method: Literal["ddim", "ddpm"] = "ddpm"
@@ -62,7 +62,7 @@ class OptimConfig:
     batch_size: int = 128
     num_epoch: int = 30
     weight_decay: float = 0.01
-    learning_rate: float = 0.0002
+    learning_rate: float = 0.00002
 
 
 @dataclass(frozen=True)

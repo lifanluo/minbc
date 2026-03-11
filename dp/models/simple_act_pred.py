@@ -2,10 +2,10 @@ import math
 
 import torch
 from torch import nn
-from configs.base import MinBCConfig
-from dp.models.vision.resnet import ResnetEncoder
-from dp.models.block import TemporalTransformer
-from dp.models.exp.action_decoder import MLPDecoder, HourglassDecoder, CondHourglassDecoder
+from ...configs.base import MinBCConfig
+from .vision.resnet import ResnetEncoder
+from .block import TemporalTransformer
+from .exp.action_decoder import MLPDecoder, HourglassDecoder, CondHourglassDecoder
 
 
 class MLP(nn.Module):
